@@ -1,37 +1,55 @@
+import uvicorn
+from fastapi import FastAPI, Request
+from config.db.database import database
+from contextlib import asynccontextmanager
+from routes.routes import router as main_router
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html
+
+from dotenv import load_dotenv  # Import the central router
 import os
-from together import Together
-import argparse
 
-def generate_prompt(question, prompt_file="prompt.md", metadata_file="metadata.sql"):
-    with open(prompt_file, "r") as f:
-        prompt = f.read()
-    
-    with open(metadata_file, "r") as f:
-        table_metadata_string = f.read()
+load_dotenv()
 
-    prompt = prompt.format(
-        user_question=question, table_metadata_string=table_metadata_string
-    )
-    return prompt
+ROOT_PATH = os.environ.get("ROOT_PATH", "/")
 
-def generate_sql(question):
-    client = Together(api_key=os.environ.get("TOGETHER_API_KEY"))
-    response = client.completions.create(
-        model="mistralai/Mistral-7B-v0.1",
-        prompt=generate_prompt(question, prompt_file="prompt.md", metadata_file="metadata.sql"),
-        # max_tokens = 100
-        stop = [";", "[/SQL]"]
-    )
-    # print(response)
-    return response.choices[0].text
+# print(ROOT_PATH)
+
+app = FastAPI(title="APIs for Reports", 
+              description="Export Reports API",
+              root_path=f"{ROOT_PATH}", 
+              openapi_url='/openapi.json', 
+              docs_url=None, 
+              redoc_url=None)
+
+
+origins = ["*"]
+
+app.add_middleware(CORSMiddleware, 
+                   allow_origins=origins,  
+                   allow_credentials=True, 
+                   allow_methods=["*"], 
+                   allow_headers=["*"])
+
+# Include the central router in the app
+app.include_router(main_router)
+
+# Dependency to connect and disconnect to/from the database
+@asynccontextmanager
+async def lifespan(app:FastAPI):
+    await database.connect()
+    yield
+    # Shutdown logic
+    await database.disconnect()
+
+app.router.lifespan_context = lifespan
+
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui_html(req: Request):
+    root_path = req.scope.get("root_path", "").rstrip("/")
+    openapi_url = root_path + app.openapi_url
+    return get_swagger_ui_html(openapi_url=openapi_url,
+                               title="APIs for Reports")
 
 if __name__ == "__main__":
-    # Parse arguments
-    _default_question="Identify ledgers created in the last month that have attachments with a specific file extension (e.g., '.pdf')"
-
-    parser = argparse.ArgumentParser(description="Run inference on a question")
-    parser.add_argument("-q","--question", type=str, default=_default_question, help="Question to run inference on")
-    args = parser.parse_args()
-    question = args.question
-    print("Loading a model and generating a postgres query for answering your question...")
-    print(generate_sql(question))
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload= True)
