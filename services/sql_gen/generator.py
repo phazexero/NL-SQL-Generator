@@ -17,7 +17,7 @@ def generate_prompt(question, prompt_file="prompt.md", metadata_file="metadata.s
 def generate_sql(question):
     client = Together(api_key=os.environ.get("TOGETHER_API_KEY"))
     response = client.completions.create(
-        model="mistralai/Mistral-7B-v0.1",
+        model="mistralai/Mistral-7B-Instruct-v0.3",
         prompt=generate_prompt(question, prompt_file="prompt.md", metadata_file="metadata.sql"),
         # max_tokens = 100
         stop = ["[/SQL]"]
